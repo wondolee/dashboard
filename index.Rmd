@@ -1,0 +1,106 @@
+---
+title: "Intermediate draft of dashboard"
+author: "Won Do Lee"
+name: "dashboard"
+output_dir: docs
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: fill
+---
+
+```{r setup,message=FALSE, warning=FALSE, paged.print=FALSE,include=FALSE}
+knitr::opts_chunk$set(message = FALSE,warning=FALSE, paged.print=FALSE)
+library(flexdashboard)
+library(dplyr)
+library(leaflet)
+library(DT)
+library(ggplot2)
+library(knitr)
+library(sf)
+library(ggrepel)
+library(tibble)
+Sys.setlocale("LC_ALL","C")
+setwd("d:/WORKSPACE/GIT/dashboard/KRILA/")
+admin.data<-st_read('data/SIMPLE_ADMIN_GUNGU.geojson')
+index.data<-read.csv('data/supply.indices.for.2nd.report.csv')
+index.data<-index.data %>% select(-DEPOPULATING)
+depopulating<-read.csv('data/MOIS_DEPOP_CODE_20220425.csv',encoding="UTF-8")[c(3,7)]
+depopulating$MOIS_CD<-as.character(depopulating$GUNGU_CD)
+index.data$MOIS_CD<-as.character(index.data$MOIS_CD)
+index.data<-left_join(index.data,depopulating[c(-1)],by="MOIS_CD")
+index.data<-left_join(admin.data,index.data[c(-1)],by=c("MOIS_CD"))
+Sys.setlocale("LC_ALL","Korean")
+index.data$GUNGU_KR<-iconv(index.data$GUNGU_KR, localeToCharset(), "UTF-8")
+```
+
+Column {data-width=600}
+-----------------------------------------------------------------------
+
+### Map
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+pal<-colorBin(palette="viridis",domain=index.data$index.01,
+              bins=seq(0,max(index.data$index.01,na.rm=TRUE)+10,by=10))
+
+index.data$labels <- paste0("<strong> 시군구: </strong>", 
+                            index.data$GUNGU_KR, "<br/>",
+                            "<strong> 영유아 천 명 당 어린이집 수: </strong>",
+                            round(index.data$index.01,1),"<br/>") %>% lapply(htmltools::HTML)
+leaflet(index.data) %>% 
+  addProviderTiles(providers$CartoDB.Positron) %>%
+  addPolygons(fillColor = ~pal(index.01),
+              color="grey80",
+              weight=0.1,
+              fillOpacity = 0.7,
+              label=~labels,
+              highlight=highlightOptions(
+                color="black",
+                bringToFront=TRUE)
+              ) %>%
+  leaflet::addLegend(pal=pal,values=~round(index.01,1),
+                      opacity=0.7,title="어린이집 공급지표(2021)")
+```
+
+Column {data-width=400}
+-----------------------------------------------------------------------
+
+### Table
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+for.table<-as.data.frame(index.data)
+for.table$index.01<-round(for.table$index.01,1)
+for.table<-for.table[c(1,3,11,4)]
+colnames(for.table)<-c("시군구 코드","시군구 명","인구감소지역 여부", "어린이집 공급지표(2021)")
+DT::datatable(for.table,rownames=FALSE,options=list(pageLength=10))
+```
+
+### Graph
+
+```{r message=FALSE, warning=FALSE, paged.print=FALSE}
+for.table<-as.data.frame(index.data)
+sum.table<-mean(for.table$index.01)
+sum.table<-c(3,19.23886)
+
+sum.for.table<-for.table %>% group_by (DEPOPULATING) %>% summarise (index.01=mean(index.01))
+sum.for.table<-rbind(sum.for.table,sum.table)
+sum.for.table$KEY<-c("기타지역(평균)","인구감소지역(평균)","관심지역(평균)","전국")
+sum.for.table$KEY <- ordered(sum.for.table$KEY, levels = c("전국","인구감소지역(평균)",
+                                                                   "관심지역(평균)","기타지역(평균)"))
+ggplot(sum.for.table,aes(x=KEY,y=index.01,fill=KEY))+
+    geom_bar(stat='identity', width=0.5,position="dodge")+
+    scale_fill_manual(values=c("black","gray40","gray70","red"))+
+    geom_text(aes(label=round(index.01,1)),vjust=rel(1.5),colour="white",size=rel(7))+
+    theme_minimal()+
+    labs(x=NULL, y=NULL,title="(단위: 영유아 천 명당)")+
+    theme(panel.grid.major.x = element_blank(),
+          panel.grid.minor.x = element_blank(),
+          panel.grid.minor.y = element_blank(),
+          plot.title=element_text(hjust = 1,size=rel(2),colour="black"),
+          legend.position="none",
+          axis.title=element_text(size=rel(1.5),face="bold",colour="black"),
+          axis.text.x = element_text(size=rel(1.5),colour="black",vjust=5),
+          axis.text.y = element_text(size=rel(1.5),face="bold",colour="black"))
+  
+```
+
